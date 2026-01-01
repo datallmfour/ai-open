@@ -1,38 +1,89 @@
-name: Sync Open WebUI Image
+name: Sync Open WebUI Image & Update Readme
 
 on:
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch: # 手动触发
   schedule:
-    - cron: '0 2 * * *' # 每天北京时间上午 10:00 自动执行
+    - cron: '0 2 * * *' # 每天北京时间上午 10:00 (UTC 2:00)
 
 jobs:
-  sync-image:
+  sync-and-update:
     runs-on: ubuntu-latest
+    #以此权限配置，允许 Action 修改仓库代码和上传包
     permissions:
-      contents: read
-      packages: write
+      contents: write  # 允许写入代码 (修改 README)
+      packages: write  # 允许写入包 (推镜像)
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Sync Multi-Arch Image using Skopeo
+      - name: Sync Multi-Arch Image
+        id: sync
         run: |
-          # 1. 定义源镜像和目标镜像
-          SOURCE_IMAGE="docker://ghcr.io/open-webui/open-webui:main"
-          TARGET_IMAGE="docker://ghcr.io/datallmfour/ai-open:latest"
+          # 定义镜像变量
+          SOURCE="docker://ghcr.io/open-webui/open-webui:main"
+          TARGET="docker://ghcr.io/${{ github.repository_owner }}/ai-open:latest"
+          
+          echo "Source: $SOURCE"
+          echo "Target: $TARGET"
 
-          echo "开始同步镜像..."
-          echo "源: $SOURCE_IMAGE"
-          echo "目标: $TARGET_IMAGE"
-
-          # 2. 使用 skopeo 直接进行全量同步
-          # --all 表示同步所有 CPU 架构 (amd64, arm64, etc.)
-          # --dest-creds 使用当前运行者的身份进行认证
+          # 使用 skopeo 同步
           skopeo copy \
             --all \
             --src-no-creds \
             --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-            $SOURCE_IMAGE $TARGET_IMAGE
+            $SOURCE $TARGET
+          
+          echo "status=success" >> $GITHUB_OUTPUT
 
-          echo "同步成功！"
+      - name: Update README with Status
+        # 即使同步失败，这一步也可以运行（可选），这里默认只在成功后运行
+        if: steps.sync.outputs.status == 'success'
+        run: |
+          # 1. 设置时区为北京时间
+          export TZ='Asia/Shanghai'
+          DATE=$(date '+%Y-%m-%d %H:%M:%S')
+          
+          # 2. 生成 README 内容 (这里是完全覆盖写入)
+          # 你可以在下面自定义你想显示的任何 Markdown 内容
+          cat > README.md <<EOF
+          # AI Open WebUI Mirror
+          
+          这是一个自动同步的镜像仓库，源自 [open-webui/open-webui](https://github.com/open-webui/open-webui)。
+          
+          该仓库每天自动拉取官方最新 \`main\` 分支镜像，并支持全架构（AMD64/ARM64）。
+          
+          ### 🚀 快速使用
+          
+          \`\`\`bash
+          docker run -d -p 3000:8080 \\
+            --add-host=host.docker.internal:host-gateway \\
+            -v open-webui:/app/backend/data \\
+            --name open-webui \\
+            --restart always \\
+            ghcr.io/${{ github.repository_owner }}/ai-open:latest
+          \`\`\`
+          
+          ### 📊 同步状态
+          
+          - **源镜像**: \`ghcr.io/open-webui/open-webui:main\`
+          - **上次同步时间 (北京时间)**: \`$DATE\`
+          - **同步状态**: ✅ 成功
+          - **架构支持**: \`linux/amd64\`, \`linux/arm64\` 等
+          
+          > 此文件由 GitHub Actions 每日自动生成，以保持仓库活跃。
+          EOF
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          # 添加 README.md
+          git add README.md
+          
+          # 提交更改 (如果内容没变，这步不会报错)
+          git commit -m "Auto update README: $(date '+%Y-%m-%d')" || echo "No changes to commit"
+          
+          # 推送到仓库
+          git push
