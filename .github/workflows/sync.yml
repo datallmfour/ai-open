@@ -1,11 +1,9 @@
 name: Sync Open WebUI Image
 
 on:
-  # 允许手动触发执行
-  workflow_dispatch:
-  # 每天北京时间上午 10:00 自动执行一次，确保镜像保持最新
+  workflow_dispatch: # 允许手动触发
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 2 * * *' # 每天北京时间上午 10:00 自动执行
 
 jobs:
   sync-image:
@@ -15,16 +13,26 @@ jobs:
       packages: write
 
     steps:
-      - name: Sync Multi-Arch Image
-        uses: containers/skopeo-copy-action@v1
-        with:
-          # 源镜像地址
-          source-image: docker://ghcr.io/open-webui/open-webui:main
-          # 你的目标镜像地址（推送到你自己的仓库下）
-          dest-image: docker://ghcr.io/datallmfour/ai-open:latest
-          # 认证信息
-          dest-username: ${{ github.actor }}
-          dest-password: ${{ secrets.GITHUB_TOKEN }}
-          # 核心参数：设置为 all 会同步所有的架构（amd64, arm64 等）
-          # 这样可以确保你的镜像和官方镜像在功能和兼容性上完全一致
-          multi-arch: all
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync Multi-Arch Image using Skopeo
+        run: |
+          # 1. 定义源镜像和目标镜像
+          SOURCE_IMAGE="docker://ghcr.io/open-webui/open-webui:main"
+          TARGET_IMAGE="docker://ghcr.io/datallmfour/ai-open:latest"
+
+          echo "开始同步镜像..."
+          echo "源: $SOURCE_IMAGE"
+          echo "目标: $TARGET_IMAGE"
+
+          # 2. 使用 skopeo 直接进行全量同步
+          # --all 表示同步所有 CPU 架构 (amd64, arm64, etc.)
+          # --dest-creds 使用当前运行者的身份进行认证
+          skopeo copy \
+            --all \
+            --src-no-creds \
+            --dest-creds "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
+            $SOURCE_IMAGE $TARGET_IMAGE
+
+          echo "同步成功！"
