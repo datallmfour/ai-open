@@ -1,0 +1,30 @@
+name: Sync Open WebUI Image
+
+on:
+  # 允许手动触发执行
+  workflow_dispatch:
+  # 每天北京时间上午 10:00 自动执行一次，确保镜像保持最新
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  sync-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Sync Multi-Arch Image
+        uses: containers/skopeo-copy-action@v1
+        with:
+          # 源镜像地址
+          source-image: docker://ghcr.io/open-webui/open-webui:main
+          # 你的目标镜像地址（推送到你自己的仓库下）
+          dest-image: docker://ghcr.io/datallmfour/ai-open:latest
+          # 认证信息
+          dest-username: ${{ github.actor }}
+          dest-password: ${{ secrets.GITHUB_TOKEN }}
+          # 核心参数：设置为 all 会同步所有的架构（amd64, arm64 等）
+          # 这样可以确保你的镜像和官方镜像在功能和兼容性上完全一致
+          multi-arch: all
